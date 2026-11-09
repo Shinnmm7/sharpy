@@ -1,0 +1,8 @@
+discord.py
+aiosqlite
+python-dotenv
+Pillow
+PyNaCl
+yt-dlp
+imageio-ffmpeg
+davey

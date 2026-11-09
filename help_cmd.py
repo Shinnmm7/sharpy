@@ -1,0 +1,429 @@
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+PAGES: dict[str, str] = {
+    "Overview": (
+        "This bot protects your server with moderation tools, auto-mod, anti-raid, anti-nuke, "
+        "member verification, anti-link and logging.\n\n"
+        "**Quick start (server owner)**\n"
+        "1. `/auditlog set` to pick a staff-only log channel\n"
+        "2. Move the bot's role as HIGH as possible (above roles it must moderate)\n"
+        "3. `/verify setup` to turn on member verification (and lockdown)\n"
+        "4. `/antilink on` to block links from non-trusted people\n"
+        "5. `/antinuke trust` and `/antilink trust` for people you fully trust\n\n"
+        "Use the dropdown below to read about each feature. Only people with *Manage Server* "
+        "(and the owner) can open this help."),
+    "Moderation commands": (
+        "`/mod kick member reason`: kick (needs Kick Members)\n"
+        "`/mod ban member reason`: ban (needs Ban Members)\n"
+        "`/mod timeout member minutes reason`: timeout up to 28 days (needs Moderate Members)\n"
+        "`/mod warn member reason`: add a warning. 3 warnings = automatic 1-hour timeout\n"
+        "`/mod warnings member`: list a member's last 10 warnings\n"
+        "`/mod purge amount`: delete 1 to 100 recent messages (needs Manage Messages)\n\n"
+        "The bot and the moderator must both outrank the target. Nobody can act on the owner or on themselves."),
+    "Extra mod tools": (
+        "`/modtools unban user_id reason`: unban someone by ID (needs Ban Members)\n"
+        "`/modtools clearwarnings user`: remove all of a user's warnings (needs Moderate Members)\n"
+        "`/modtools slowmode seconds [channel]`: set slowmode, 0 turns it off (needs Manage Channels)\n"
+        "`/modtools lock [channel]` / `/modtools unlock [channel]`: stop or allow @everyone sending messages "
+        "(needs Manage Channels)\n"
+        "`/modtools userinfo [member]`: account age, join date, roles and timeout status. Anyone can use it.\n\n"
+        "The bot needs the same permission as you for each command. Everything except `/modtools userinfo` is logged."),
+    "Welcome, bye & booster": (
+        "Post a custom embed when someone joins, leaves or boosts the server. Needs Manage Server.\n\n"
+        "`/welcome setup channel [title] [message] [image] [image_url]`\n"
+        "`/bye setup ...` and `/booster setup ...` take the same options\n"
+        "`/welcome preview`, `/welcome status`, `/welcome off` (same for `/bye` and `/booster`)\n\n"
+        "**Image:** attach one with `image`, or paste a link (a Discord CDN link works) in `image_url`. "
+        "The bot saves its own copy, so it still shows after Discord's links expire. PNG, JPG, GIF or WebP, "
+        "up to 8 MB. Run setup again with only the changes you want, or add `clear_image` to remove the picture.\n\n"
+        "**Placeholders** in the title and message: `{user}` (mention), `{name}`, `{server}`, `{count}` "
+        "(member count).\n"
+        "The bot needs View Channel, Send Messages, Embed Links and Attach Files in that channel. "
+        "Brand-new accounts that anti-raid kicks are not greeted. `DB_PATH` must be on a volume so settings survive redeploys."),
+    "Partnership": (
+        "`/partnership message [channel] [ping] [image] [image_url] [title] [invite] [invite2]`: the bot posts your "
+        "partnership announcement as a gold embed, so it comes from the bot and not from you. "
+        "Needs Manage Server.\n\n"
+        "- The first time, choose a `channel`. It's remembered, so next time just type the message.\n"
+        "- Type `\\n` in the message for a new line.\n"
+        "- `ping` pings one role above the announcement. Mentions typed inside the text never ping anyone.\n"
+        "- Add a picture with `image` or an `image_url` link (PNG, JPG, GIF or WebP, up to 8 MB). A Discord CDN link (cdn.discordapp.com) is shown directly.\n"
+        "- `invite` (and `invite2`): a Discord invite like `discord.gg/abc123`. I check it is valid, show the server "
+        "name and member count, and add a **Join** button.\n\n"
+        "The bot needs View Channel, Send Messages, Embed Links and Attach Files there. Each post is logged."),
+    "Tickets": (
+        "Private support channels opened with a button: **Partnership**, **Claim rewards**, **Question**, **Other**.\n\n"
+        "`/ticket setup channel category staff_role [log_channel]`: posts the panel (needs Manage Server)\n"
+        "- Each member can have one open ticket. Only they and `staff_role` can see it.\n"
+        "- The **Close ticket** button (owner or staff) deletes the channel and sends a text transcript to `log_channel`.\n"
+        "- `/ticket add member` / `/ticket remove member`: staff only, inside a ticket\n\n"
+        "The bot needs Manage Channels and Manage Roles."),
+    "Leveling": (
+        "Members earn 15-25 XP per message, at most once a minute, and get a level-up message.\n\n"
+        "`/leveling on [channel]` / `/leveling off`: turn it on (it starts OFF) and pick where level-ups are posted\n"
+        "`/leveling rank [member]` and `/leveling top`: anyone can use these\n"
+        "`/leveling reward level role`: give a role at a level. `/leveling unreward level`, `/leveling rewards`\n"
+        "`/leveling reset member`: set someone's XP to zero\n\n"
+        "Reward roles must be below the bot's highest role."),
+    "Invite tracker": (
+        "Tracks which invite each new member used and credits the inviter.\n\n"
+        "`/invites setup channel`: announce \"X joined, invited by Y\" there. `/invites off` stops the messages\n"
+        "`/invites stats [member]`: active, total, left and fake invites (fake = account under 3 days old)\n"
+        "`/invites top`: the best inviters. `/invites who member`: who invited someone\n\n"
+        "The bot needs the **Manage Server** permission to read invites. It can only track people who join "
+        "after it was added."),
+    "Custom roles": (
+        "Members make their own role. It is given to them straight away and has **no permissions**, only a "
+        "name and a color (hex like `#ff66aa`).\n\n"
+        "**Members:** press a button on the panel, then fill in the pop-up form.\n"
+        "- **Create Role** makes your role, then you pick its color from a dropdown of 24 colors "
+        "(Red, Pink, Sky Blue, Purple and more). **Change Role** lets you pick a new color or rename it. "
+        "You can also type a color name or a hex code like `#ff66aa`.\n"
+        "- **Role Icon** puts an emoji or an image link next to your role (empty form removes it). "
+        "The emoji can be a normal one or a custom emoji from any server (pick it with Discord's emoji button "
+        "in the box, or type `:name:` for one from this server). "
+        "`/role icon` also takes an uploaded image. Any picture works: the bot crops it to a square and "
+        "resizes it. Icons need Boost Level 2.\n"
+        "- Only server boosters and members who have a selected role can use them. The panel lists the "
+        "selected roles by name.\n"
+        "`/role custom name [color]` does the same without the panel, and `/role remove` deletes the role.\n\n"
+        "**Role Crew:** share your role with friends. Press **Share Role** on the panel and pick a friend from "
+        "the menu, or use the commands:\n"
+        "`/role share member` gives a friend your role (3 friends by default). `/role unshare member` takes it "
+        "back, `/role leave owner` lets a friend give it up, and `/role crew [member]` shows who is in a crew. "
+        "If your custom role is deleted, your crew loses it too.\n\n"
+        "**Role Gallery:** the **Gallery** button on the panel (or `/role gallery`) lets anyone browse every "
+        "custom role (name, color, icon, owner) and press **Like**. You can't like your own, and roles are "
+        "ranked by likes.\n\n"
+        "**Staff (Manage Server)**\n"
+        "`/role setup channel [selected_role]`: post the panel with the two buttons\n"
+        "`/role allow role` / `/role disallow role`: add or remove roles for the Selected role button\n"
+        "`/role boosters enabled`: let boosters use it (on by default)\n"
+        "`/role crewsize amount`: how many friends each member can share their role with (0 turns it off)\n"
+        "`/role position [role] [placement]`: custom roles sit at the very bottom of the role list by default. "
+        "Pick a role and choose **Above** or **Below** to place them next to it instead "
+        "(existing custom roles move too)\n"
+        "`/role status`: show the settings\n\n"
+        "A custom role is deleted if the member stops boosting, loses the allowed role or leaves. "
+        "Names must be unique, can't contain @ and follow the word filter. "
+        "The bot needs Manage Roles and its role must be above where custom roles go."),
+    "Community extras": (
+        "**/profile [member]**: a profile card with level, rank, XP, kudos, invites, daily streak, custom role "
+        "and join date. Anyone can use it.\n\n"
+        "**/daily**: claim XP once a day. The streak adds 10 XP per day up to 7 days (50 to 120 XP). "
+        "Miss a day and it restarts. Needs `/leveling on`.\n\n"
+        "**/kudos give member reason**: thank someone (3 per day, public message). `/kudos top` shows "
+        "this week's or all time's most thanked members.\n\n"
+        "**/capsule write message when**: seal a message that the bot posts in that channel later, like `30d` "
+        "or `12w` (1 minute to 1 year, 5 waiting at a time). `/capsule list` and `/capsule cancel id`.\n\n"
+        "**Confess button**: members press **Confess**, type in the pop-up, and the bot posts it anonymously. "
+        "`/confess send message` does the same. Members can't see who wrote it, but staff can look it up and "
+        "members are told so. No links or filtered words, one a minute.\n"
+        "Staff (Manage Server): `/confess setup panel_channel confession_channel` posts the button in one channel "
+        "and sends confessions to the other. `/confess off`, `/confess reveal number` (logged), "
+        "`/confess delete number`."),
+    "Mrbeastpot": (
+        "A trap channel that catches spam bots (like the fake giveaway and casino scams). Spam bots post in "
+        "every channel they can see, real members never need this one.\n\n"
+        "`/mrbeastpot setup channel [action]` (needs Manage Server) posts the warning message. The action is "
+        "**softban** (default: ban, wipe their last 7 days of messages, then unban), **ban**, or **kick**.\n"
+        "`/mrbeastpot status` shows the channel and how many were caught. `/mrbeastpot off` removes the trap.\n\n"
+        "The message shows a live **Bans** counter. Everything caught is also sent to your log channel with what "
+        "they posted. Staff, the owner and anyone above the bot are never touched. The bot needs Ban Members, "
+        "Kick Members and Manage Messages, and the channel must be visible to @everyone."),
+    "Fun and social": (
+        "**/wyr ask option_a option_b**: a would you rather poll with live percentages. Members vote with buttons "
+        "and can change their vote. `/wyr end message_id` closes it.\n"
+        "**/pairup**: members `join` the pool with a topic, then staff run `/pairup match` and everyone is paired "
+        "with someone new (recent matches are avoided). `leave` and `pool` also exist.\n"
+        "**/vibe**: `set` your mood, `board` shows the server's mood for the last 24 hours, `panel` (staff) posts a "
+        "mood picker.\n"
+        "**/duel challenge member**: rock paper scissors, first to 2. Picks are secret and revealed together. "
+        "`/duel top` is the leaderboard.\n"
+        "**/birthday**: `set month day [utc_offset]`, `remove`, `next`, and `channel` (staff) for where the bot "
+        "announces them. Only the day and month are stored."),
+    "Social tools": (
+        "**/lfg post game slots [note] [hours]**: a looking-for-group post with Join, Leave and Close buttons. "
+        "When it fills, everyone in the group is pinged. It closes by itself.\n"
+        "**/secretsanta**: staff `open` an event, members press Join, then `draw` sends everyone their giftee by DM "
+        "(nobody gets themselves). `mine` shows yours if DMs are closed, `cancel` stops it.\n"
+        "**/habit**: `add` up to 5 daily habits (set your `utc_offset` so the day ends at your midnight), `done` "
+        "to check in, `list`, `remove`, and `board` for the best streaks. Miss a day and the streak restarts. "
+        "Mark a habit private to keep it off the board.\n"
+        "**/wordchain**: `setup` a channel where each word must start with the last letter of the previous one. "
+        "No repeats, no going twice in a row, wrong words are deleted. `top`, `status`, `reset`, `off`.\n"
+        "**/remind me when text [dm]**: for example `/remind me 2h call mom`. `list` and `cancel` too."),
+    "Security tools": (
+        "**/lockdown start [reason]** (Administrator): stops @everyone from talking in every text channel in one go. "
+        "**/lockdown end** puts every channel back exactly how it was. `status` shows if it's on.\n"
+        "**/gate set min_days action**: kick (with a DM explaining why) or just log accounts younger than the number "
+        "of days. `/gate allow user_id` lets one trusted new account in. `off` and `status`.\n"
+        "**/quarantine add member [reason] [hours]**: saves and removes all of a member's roles and times them out. "
+        "**/quarantine release member** gives everything back. `list` shows who is quarantined.\n"
+        "**/raid scan**: checks your server for risky permissions (everyone, admin bots, too many admins), low "
+        "verification and missing 2FA, and tells you what to fix.\n"
+        "**/raid on|off|status**: raid mode. While ON, every new member who joins is kicked (or banned) and told to try "
+        "later. `/raid off` lets people in again and shows how many were blocked.\n"
+        "**/raid clean minutes [action] [only_no_roles]**: after a raid, preview everyone who joined in the last few "
+        "minutes and ban or kick them with one confirm button. Members with roles are skipped by default."),
+    "Party games": (
+        "**/story**: `start title opening`, then everyone `add`s one sentence (never twice in a row). `read` shows it so "
+        "far and `finish` posts the whole story.\n"
+        "**/potato**: `start` a hot potato, `pass member` it on. It explodes after a secret random time and the "
+        "holder is burned. `top` is the hall of burns.\n"
+        "**/riddle post** (staff): a private form takes the riddle and its answer (use `|` for several accepted "
+        "answers). Members press Answer, wrong tries are private, the first correct one wins. `reveal`, `top`.\n"
+        "**/numberhunt**: staff `start` a secret number, everyone uses `guess` and gets hot or cold hints. `stop`, `top`.\n"
+        "**/truthdare ask [kind] [member]**: a random truth or dare. Staff can `add`, `list` and `remove` their own."),
+    "Arcade games": (
+        "**/trivia ask [seconds]**: a multiple choice question with buttons. Right answers get 1 point, the fastest "
+        "gets 2. `/trivia top` is the leaderboard.\n"
+        "**/hangman**: `start`, then the whole server uses `guess` with a letter or the full word. 6 wrong guesses "
+        "and the man hangs. `stop`, `top`.\n"
+        "**/scramble start [rounds] [seconds]**: the bot posts scrambled words and the first person to type the "
+        "right word in the channel scores. `stop`, `top`.\n"
+        "**/tierlist create topic items**: the server ranks things from S to D. Members press Vote and rate each "
+        "item, Results shows the current list, `/tierlist end message_id` posts the final one.\n"
+        "**/whosaid play**: shows a random recent message from the channel and 4 possible authors. One guess "
+        "each, `top` for the best detectives. Needs Read Message History."),
+    "Lounge games": (
+        "**/predict create question [hours]** (staff): the server votes Yes or No with buttons. When it's over "
+        "`/predict resolve message_id outcome` scores everyone, and `/predict top` ranks the best predictors.\n"
+        "**/pet**: `adopt name kind`, then `feed` and `play` with it. It gets hungry and sad as time passes and "
+        "levels up when you care for it. `status [member]` and `top`.\n"
+        "**/connect4 challenge member**: two players, buttons for columns, four in a row wins. `top`.\n"
+        "**/wordle**: `start` a private 5 letter puzzle, `guess` a word (6 tries), `giveup`, `stats`, `top`. A win is "
+        "shared in the channel without spoiling the word.\n"
+        "**/fortune today [public]**: a fortune, lucky number, color and luck level that stays the same all day. "
+        "`/fortune luckiest` shows who is luckiest today."),
+    "Playground": (
+        "**/telephone start message first**: whisper a secret message to a member. They `read` it and `pass` it "
+        "on in their own words, and the bot garbles it a little every time. `end` reveals what it became.\n"
+        "**/minesweeper play [level]**: a real minesweeper board made of spoilers. Part of it is already open.\n"
+        "**/memory play**: 16 cards, find all 8 pairs in the fewest moves. Only you can flip your cards. `top`.\n"
+        "**/quickdraw start**: wait for the button to turn green and press it first. Pressing early knocks you "
+        "out. `top` shows the fastest times (network lag counts).\n"
+        "**/ship match first [second]**: a just-for-fun compatibility score with a ship name, a green flag and a "
+        "red flag. The same pair always gets the same result."),
+    "Couples and fun": (
+        "Everything here needs consent: nobody becomes a couple unless they press Accept.\n\n"
+        "**/couple**: `propose member` (they can say no), `status [member]` shows days together, love points and "
+        "level, `breakup` ends it (asks you to confirm), `top` ranks the couples by love points.\n"
+        "**/lovenote send message [public]**: a sweet note to your partner, in the channel or by DM. +1 love point a day.\n"
+        "**/datenight idea**: a date idea. When both partners press We did it, they get +10 love points (once per "
+        "20 hours). `/datenight spark` gives a conversation starter.\n"
+        "**/couplequiz start partner**: answer 5 questions about yourself in secret, then your partner guesses. "
+        "Works for any two members, and partners earn love points.\n"
+        "**/mindmeld start member**: both secretly type a word and try to match. Up to 8 rounds. `top` shows the "
+        "pairs who think most alike."),
+    "Bonus fun": (
+        "**/drops**: staff `setup` a channel and loot crates fall as people chat. The first person to press Open keeps "
+        "the item (Common to Legendary). `bag [member]` shows a collection and `top` ranks collectors. `off` stops it.\n"
+        "**/taboo start**: you get a secret word and 4 forbidden words, and describe it in chat while others guess. "
+        "Say a forbidden word and your message is deleted and the round ends. `stop`, `top`.\n"
+        "**/superlative start category**: members vote for a member from a menu (not themselves). Results are secret "
+        "until `/superlative end message_id` announces the winner.\n"
+        "**/decide**: `pick options` (chooses for you), `8ball question`, `roll dice` (like 2d6 or d20+3) and `flip`.\n"
+        "**/rate thing**: rates anything out of 10 with sub scores. The same thing always gets the same rating, and "
+        "it's always friendly."),
+    "Music": (
+        "**/join [channel]**: I join your voice channel (or the one you pick) and **stay there 24/7**. I rejoin by "
+        "myself if I get disconnected or the bot restarts. `/leave` sends me away.\n"
+        "**/play song**: a title (`/play lofi hip hop`), a YouTube link (a playlist adds up to 25 songs) or a Spotify "
+        "link. If I'm not in a channel yet I join yours.\n"
+        "**/music**: `skip`, `pause`, `resume`, `stop` (clears the queue, I stay), `queue`, `nowplaying`, `volume`, "
+        "`loop` (off, song, queue) and `shuffle`. You must be in my voice channel to use them.\n\n"
+        "Spotify songs are looked up and played from YouTube (Spotify doesn't allow its audio to be streamed). A single "
+        "Spotify track link works as is. For Spotify albums and playlists, set `SPOTIFY_CLIENT_ID` and "
+        "`SPOTIFY_CLIENT_SECRET` (free, from developer.spotify.com). If YouTube blocks the host, set `YOUTUBE_COOKIES` "
+        "to the contents of a cookies.txt file. The bot needs Connect and Speak."),
+    "Access control": (
+        "**/access** (server owner only) chooses who can use my commands, /help included.\n"
+        "**/access allow_role role** / **allow_user user**: add to the list. Once the list has anyone, only those "
+        "people, the owner and admins can use commands.\n"
+        "**/access remove_role** / **remove_user**: take someone off. **/access list**: see the list. "
+        "**/access off**: clear it so everyone can use commands again.\n"
+        "Commands that need permissions (like /ban) still need those permissions."),
+    "Premium": (
+        "**/premium**: anyone can run this to see what premium unlocks, the price, and how to get it (contact info "
+        "you set). It never DMs anyone; it only replies to the person who ran it.\n"
+        "**/premiumadmin setup perks price contact** (Manage Server): set the perks list, price and contact text shown "
+        "`/premium`. Type `\\n` for a new line."),
+    "Premium features": (
+        "Five extra commands for members with premium (granted by staff with `/premiumadmin grant member`, "
+        "removed with `/premiumadmin revoke`, listed with `/premiumadmin list`). Staff and the owner can always use them.\n\n"
+        "**/premiumutil afk [reason]**: marks you AFK. If someone mentions you, I reply with your reason. Speaking again "
+        "clears it.\n"
+        "**/premiumutil snipe**: shows the last deleted message in the channel (up to 15 minutes old).\n"
+        "**/premiumutil stealemoji emoji [name]**: paste a custom emoji from another server (or an image link + name) to add it "
+        "here. Needs Manage Expressions.\n"
+        "**/autoresponder add|remove|list**: I auto-reply when someone says a trigger word or phrase "
+        "(up to 15 per server).\n"
+        "**/sticky set|off**: keeps a message pinned to the bottom of a channel, reposting it as new messages come in.\n"
+        "**/premiumposts embed description [channel] [title] [color] [image_url] [footer]**: post a custom embed as "
+        "the bot.\n"
+        "**/premiumposts archive [limit]**: export up to 500 recent messages in the channel to a text file.\n"
+        "**/premiumposts poll question options [minutes]**: a reaction poll with up to 10 options; optionally auto-announces "
+        "the winner.\n"
+        "**/bio set|show**: a short personal bio members can show each other.\n"
+        "**/premiumposts spotlight message_link channel**: repost a great message into a highlights channel.\n\n"
+        "**/custom-profile set [nickname] [title] [color] [bio]**: set a nickname I apply in every server "
+        "I share with you (not just this one), plus a title, color and bio shown on your profile card. Granted "
+        "with premium in any ONE server, it works everywhere I'm a member -- and I reapply the nickname "
+        "automatically if you join a new mutual server later.\n"
+        "**/custom-profile clear**: clear all of it and reset your nickname everywhere.\n"
+        "**/custom-profile show [member]**: view a custom profile card.\n"
+        "I only change a nickname where I have Manage Nicknames and my role is above yours; I skip the server "
+        "owner, who Discord never lets a bot rename."),
+
+
+    "Surprise box": (
+        "A mystery button. Members press **Open the box** and something happens. The panel and the replies "
+        "never say what the prize is or what the bad luck is.\n\n"
+        "`/surprise setup channel prize [role] [win_chance] [timeout_chance] [cooldown_minutes] [title]` "
+        "(needs Manage Server)\n"
+        "- `prize`: what a lucky member wins, in your own words, for example Gift card. The winner is told "
+        "privately and the bot logs who won so you can hand it over.\n"
+        "- `role` (optional): also give the winner a role, for example one you allowed with `/role allow`.\n"
+        "- `win_chance` (default 5%) and `timeout_chance` (default 25%): the secret odds. Bad luck is a timeout "
+        "of 1, 2 or 3 minutes.\n"
+        "- `cooldown_minutes` (default 10): how long each member waits between tries\n"
+        "`/surprise logchannel [channel]` sends every try (who got lucky or unlucky) to a staff channel. `/surprise status` shows the settings and totals. `/surprise off` closes the box.\n"
+        "`/surprise logs [member] [show]` shows who got lucky or unlucky, newest first (only you see it).\n\n"
+        "Everyone who doesn't win, whether nothing happened or they got timed out, only sees "
+        "\"Better luck next time, you got unlucky today.\" A win is told privately and announced in the channel "
+        "without naming the prize. Timeouts use the Moderate Members permission, and staff and members above "
+        "the bot are immune. The prize role must be below the bot's highest role."),
+    "Giveaways": (
+        "`/giveaway start prize duration [winners] [channel] [required_role]`: duration like `30m`, `2h`, `1d12h`\n"
+        "Members press **Enter** (press again to leave). The button shows the live entry count.\n"
+        "`/giveaway end id`: finish early. `/giveaway reroll id [winners]`: new winners. `/giveaway list`\n\n"
+        "The ID is in the giveaway's footer. Winners who left the server are skipped. Giveaways survive bot "
+        "restarts as long as `DB_PATH` is on a volume. Needs Manage Server."),
+    "Word filter": (
+        "Deletes messages that contain words you choose. Edited messages are checked too, and staff with "
+        "Manage Messages are exempt. Needs Manage Server to change.\n\n"
+        "`/filter add words`: separate several with commas. Phrases work. `bad*` also catches `badword`\n"
+        "`/filter remove words`, `/filter list`, `/filter clear`\n"
+        "`/filter action`: delete only, delete + warning, or delete + 10 min timeout\n\n"
+        "Matches whole words and ignores capitals, accents and invisible characters, so `ass` won't catch "
+        "`class`. Replies to these commands are private. The bot needs Manage Messages (and Moderate Members "
+        "for timeouts). Filter hits are sent to your log channel."),
+    "Auto-mod & anti-raid": (
+        "**Auto-mod** (staff with Manage Messages are exempt)\n"
+        "- 5 messages in 5 seconds: message deleted + 10 min timeout\n"
+        "- 5 or more mentions in one message: deleted + 10 min timeout\n\n"
+        "**Anti-raid**\n"
+        "- 8 joins within 10 seconds starts raid mode for 2 minutes\n"
+        "- During raid mode, accounts younger than 7 days are kicked on join\n\n"
+        "Invites and links are handled by Anti-link."),
+    "Anti-nuke": (
+        "Watches the audit log for destructive actions by people who are NOT trusted.\n\n"
+        "**Limits (per 10 seconds):** 3 channel deletes, 3 role deletes, 4 bans, 5 kicks, "
+        "5 channel creates, 5 role creates, 3 webhook creates.\n"
+        "2 or more actions in a burst posts a *Suspicious activity* log. Hitting the limit strips "
+        "the person's dangerous roles (bots are kicked) and re-creates deleted channels.\n"
+        "Also: untrusted bot invites are kicked, and dangerous permissions granted to a role by an "
+        "untrusted person are reverted.\n\n"
+        "**Commands (server owner only)**\n"
+        "`/antinuke trust user`, `/antinuke untrust user`, `/antinuke status`\n"
+        "The owner and the bot are always trusted. The bot needs View Audit Log, Manage Roles, "
+        "Manage Channels, Ban and Kick, and a high role."),
+    "Verification": (
+        "Every new member must pass a random challenge (a math question, a code to copy, or typing yes) "
+        "to get the member role.\n\n"
+        "`/verify setup member_role verify_channel [timeout_minutes] [lockdown] [grant_existing]`\n"
+        "- Posts the Verify button in the verify channel\n"
+        "- `lockdown` (default on): unverified people can only see the verify channel\n"
+        "- `grant_existing` (default on): gives the role to current members (up to 250)\n"
+        "- Members who don't verify within the timeout (default 15 min) are kicked; 5 wrong answers = kick\n"
+        "`/verify all`: give the verified role to every member who doesn't have it (asks you to confirm first)\n"
+        "`/verify user member`: verify one person by hand\n"
+        "`/verify status`: show settings\n"
+        "`/verify disable`: turn it off (restores @everyone View Channels if lockdown changed it)\n\n"
+        "The bot's role must be above the member role and have View Channels itself."),
+    "Anti-link": (
+        "Deletes links from anyone who isn't trusted. Edited messages are checked too. "
+        "3 blocked messages in 5 minutes = 10 min timeout.\n\n"
+        "**Who can post links:** the server owner, everyone in `/antinuke trust`, and everyone in "
+        "`/antilink trust`. Admins and mods are NOT exempt unless trusted.\n\n"
+        "`/antilink on` / `/antilink off`: master switch (starts OFF)\n"
+        "`/antilink toggle option enabled`: choose what to block: Discord invites, Discord CDN links, "
+        "all other links (https, www, bare domains like example.com), file/image uploads (off by default)\n"
+        "`/antilink allow domain` / `/antilink unallow domain`: domains everyone can post (try tenor.com so GIFs work)\n"
+        "`/antilink trust user` / `/antilink untrust user`: owner only\n"
+        "`/antilink status`: show everything"),
+    "Server profile": (
+        "Change the server's look by attaching an image to the command.\n\n"
+        "`/server profile image`: set the server icon (PNG, JPG, GIF or WebP, up to 8 MB, 512x512 works best)\n"
+        "`/server banner image`: set the server banner (960x540 works best)\n"
+        "`/server clear which`: remove the icon or the banner\n\n"
+        "Needs Manage Server for you AND for the bot. Banners need Server Boost Level 2, and animated "
+        "GIF icons/banners need extra boosts. Every change is logged."),
+    "Store": (
+        "`/buy [channel]`: posts the store panel (an embed with a **Buy** button) in a channel. "
+        "Needs Manage Server.\n\n"
+        "When a member clicks **Buy**, only they see a dropdown to choose **Self bot** or **Tool Bot**. "
+        "After choosing, they see the product details and the choice is sent to your log channel "
+        "as a *Purchase request*. Each person has a short cooldown to prevent spam.\n\n"
+        "Edit product names, descriptions and prices in the `PRODUCTS` list at the top of `shop.py`."),
+    "Changelog": (
+        "When the bot is redeployed on Railway with new commits, it posts an *update* embed listing "
+        "what changed.\n\n"
+        "`/changelog set channel`: choose the announcement channel (defaults to the log channel)\n"
+        "`/changelog off`: go back to the log channel\n"
+        "`/changelog status`: show the channel and running version\n"
+        "`/changelog preview`: see what an announcement looks like (only you see it)\n\n"
+        "Needs Railway to deploy from GitHub and `DB_PATH` on a volume. The first deploy after "
+        "adding this only records the version and doesn't announce."),
+    "Logging": (
+        "`/auditlog set channel`: pick where logs go (make it staff-only)\n"
+        "`/auditlog status` and `/auditlog off`\n\n"
+        "**Logged:** verifications and failed attempts, kicks/bans/unbans/timeouts (including ones done in "
+        "Discord's own menus or by other bots), blocked links, automod hits, raid mode, anti-nuke warnings "
+        "and triggers, message edits and deletes.\n"
+        "Needs the View Audit Log permission."),
+}
+
+
+def make_embed(name: str) -> discord.Embed:
+    return discord.Embed(title=f"Help: {name}", description=PAGES[name], color=discord.Color.blurple())
+
+
+class HelpSelect(discord.ui.Select):
+    """A dropdown holds at most 25 options, so the sections are split over several dropdowns."""
+
+    def __init__(self, names: list[str], index: int, total: int):
+        label = f"Sections {index + 1} of {total}: {names[0]} ... {names[-1]}" if total > 1 else "Pick a section"
+        super().__init__(placeholder=label[:150], row=index,
+                         options=[discord.SelectOption(label=name[:100], value=name) for name in names])
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(embed=make_embed(self.values[0]), view=self.view)
+
+
+class HelpView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+        names = list(PAGES)
+        parts = max(1, -(-len(names) // 25))   # how many dropdowns we need
+        size = -(-len(names) // parts)         # spread the sections evenly
+        for i in range(parts):
+            self.add_item(HelpSelect(names[i * size:(i + 1) * size], i, parts))
+
+
+class HelpCog(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    @app_commands.command(name="help", description="See every command and how the bot works")
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def help_command(self, interaction: discord.Interaction):
+        await interaction.response.send_message(embed=make_embed("Overview"), view=HelpView(), ephemeral=True)
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(HelpCog(bot))
