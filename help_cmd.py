@@ -206,7 +206,8 @@ PAGES: dict[str, str] = {
         "**/quickdraw start**: wait for the button to turn green and press it first. Pressing early knocks you "
         "out. `top` shows the fastest times (network lag counts).\n"
         "**/ship match first [second]**: a just-for-fun compatibility score with a ship name, a green flag and a "
-        "red flag. The same pair always gets the same result."),
+        "red flag, plus a picture of both of their avatars with a heart between them that grows and reddens "
+        "with the percentage. The same pair always gets the same result."),
     "Couples and fun": (
         "Everything here needs consent: nobody becomes a couple unless they press Accept.\n\n"
         "**/couple**: `propose member` (they can say no), `status [member]` shows days together, love points and "

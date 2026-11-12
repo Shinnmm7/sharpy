@@ -46,7 +46,7 @@ FILE_COMMANDS = {
     "party": "/story, /potato, /riddle, /numberhunt, /truthdare",
     "arcade": "/trivia, /hangman, /scramble, /tierlist, /whosaid",
     "lounge": "/predict, /pet, /connect4, /wordle, /fortune",
-    "playground": "/telephone, /minesweeper, /memory, /quickdraw, /ship",
+    "playground": "/telephone, /minesweeper, /memory, /quickdraw, /ship (now with avatars + heart art)",
     "couples": "/couple, /lovenote, /datenight, /couplequiz, /mindmeld",
     "bonanza": "/drops, /taboo, /superlative, /decide, /rate",
     "music": "/join, /leave, /play, /music",

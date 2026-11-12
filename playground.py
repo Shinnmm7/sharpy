@@ -1,11 +1,16 @@
 import asyncio
+import io
 import random
 import string
 import time
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
+from PIL import Image, ImageDraw
+
+SHIP_FETCH_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
 # =====================================================================
@@ -467,6 +472,52 @@ def ship_result(id_a: int, id_b: int) -> dict:
     return {"pct": pct, "verdict": verdict, "green": rng.choice(GREEN_FLAGS), "red": rng.choice(RED_FLAGS)}
 
 
+def heart_bar(pct: int) -> str:
+    filled = round(pct / 10)
+    return "❤" * filled + "🤍" * (10 - filled)
+
+
+def draw_heart(draw: ImageDraw.ImageDraw, cx: int, cy: int, size: int, color):
+    r = size // 2
+    draw.pieslice([cx - r * 2, cy - r, cx, cy + r], 180, 360, fill=color)
+    draw.pieslice([cx, cy - r, cx + r * 2, cy + r], 180, 360, fill=color)
+    draw.polygon([(cx - r * 2, cy), (cx + r * 2, cy), (cx, cy + r * 3)], fill=color)
+
+
+def circle_crop(img: Image.Image, size: int) -> Image.Image:
+    img = img.convert("RGBA").resize((size, size))
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(img, (0, 0), mask)
+    return out
+
+
+def ship_card(avatar_a: bytes, avatar_b: bytes, pct: int) -> io.BytesIO:
+    """Both members' avatars side by side with a heart between them, sized to the percentage."""
+    size, pad = 256, 40
+    width, height = size * 2 + pad * 3, size + pad * 2
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    img_a = circle_crop(Image.open(io.BytesIO(avatar_a)), size)
+    img_b = circle_crop(Image.open(io.BytesIO(avatar_b)), size)
+    canvas.paste(img_a, (pad, pad), img_a)
+    canvas.paste(img_b, (pad * 2 + size, pad), img_b)
+    heart_size = 36 + int(pct / 100 * 60)   # a bigger, redder heart for a higher match
+    color = (255, int(190 - pct * 0.9), int(190 - pct * 1.4), 255)
+    draw_heart(ImageDraw.Draw(canvas), width // 2, height // 2 - heart_size // 2, heart_size, color)
+    buf = io.BytesIO()
+    canvas.save(buf, "PNG")
+    buf.seek(0)
+    return buf
+
+
+async def fetch_avatar(member: discord.Member) -> bytes:
+    async with aiohttp.ClientSession(timeout=SHIP_FETCH_TIMEOUT) as session:
+        async with session.get(member.display_avatar.replace(size=256, format="png").url) as resp:
+            resp.raise_for_status()
+            return await resp.read()
+
+
 class Ship(commands.GroupCog, group_name="ship", group_description="Check how well two members match"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -481,16 +532,23 @@ class Ship(commands.GroupCog, group_name="ship", group_description="Check how we
             return await interaction.response.send_message("Bots don't have feelings. Pick two people.", ephemeral=True)
         if first.id == second.id:
             return await interaction.response.send_message("Self love! **100%** compatible. Treat yourself today.")
+        await interaction.response.defer()
         r = ship_result(first.id, second.id)
-        filled = r["pct"] // 10
         embed = discord.Embed(title=f"{first.display_name} + {second.display_name}",
                               description=f"Ship name: **{ship_name(first.display_name, second.display_name)}**\n\n"
-                                          f"`{'#' * filled}{'-' * (10 - filled)}` **{r['pct']}%**\n{r['verdict']}",
+                                          f"{heart_bar(r['pct'])} **{r['pct']}%**\n{r['verdict']}",
                               color=discord.Color.from_rgb(255, 105, 180))
         embed.add_field(name="Green flag", value=r["green"], inline=False)
         embed.add_field(name="Red flag", value=r["red"], inline=False)
         embed.set_footer(text="Same result every time for the same pair. Just for fun!")
-        await interaction.response.send_message(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        try:
+            avatar_a, avatar_b = await asyncio.gather(fetch_avatar(first), fetch_avatar(second))
+            card = await asyncio.get_running_loop().run_in_executor(None, ship_card, avatar_a, avatar_b, r["pct"])
+            file = discord.File(card, filename="ship.png")
+            embed.set_image(url="attachment://ship.png")
+            await interaction.followup.send(embed=embed, file=file, allowed_mentions=discord.AllowedMentions.none())
+        except (aiohttp.ClientError, OSError):
+            await interaction.followup.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
 
 async def setup(bot: commands.Bot):
