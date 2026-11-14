@@ -125,6 +125,18 @@ PAGES: dict[str, str] = {
         "Staff (Manage Server): `/confess setup panel_channel confession_channel` posts the button in one channel "
         "and sends confessions to the other. `/confess off`, `/confess reveal number` (logged), "
         "`/confess delete number`."),
+    "Suggestions & bug reports": (
+        "**/suggestion submit category suggestion**: suggest something for the **Roblox game** or the **Discord "
+        "server** (pick one). Posted with a vote-tracking \N{THUMBS UP SIGN}/\N{THUMBS DOWN SIGN} reaction in "
+        "whichever channel staff set for that category.\n"
+        "Staff (Manage Server): `/suggestion setup [game_channel] [server_channel]` sets one or both channels. "
+        "`/suggestion approve id [reason]` / `/suggestion deny id [reason]` marks one and recolors its embed.\n\n"
+        "**/bug-exploit report title description severity [proof]**: report a bug or exploit in the Roblox game. "
+        "Sent **privately** to a staff channel, not posted publicly, since exploit reports can be abused before "
+        "they're fixed. Pick **Critical** if it's being actively abused right now. `proof` takes a screenshot or "
+        "video.\n"
+        "Staff (Manage Server): `/bug-exploit setup channel [ping_role]` sets the private channel (the bot warns "
+        "if that channel looks public). `/bug-exploit resolve report_id [note]` closes one."),
     "Mrbeastpot": (
         "A trap channel that catches spam bots (like the fake giveaway and casino scams). Spam bots post in "
         "every channel they can see, real members never need this one.\n\n"
