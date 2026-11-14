@@ -105,7 +105,8 @@ PAGES: dict[str, str] = {
         "`/role position [role] [placement]`: custom roles sit at the very bottom of the role list by default. "
         "Pick a role and choose **Above** or **Below** to place them next to it instead "
         "(existing custom roles move too)\n"
-        "`/role status`: show the settings\n\n"
+        "`/role status`: show the settings\n"
+        "`/role give role member` (Manage Roles): give any role to a member by hand, regardless of custom roles.\n\n"
         "A custom role is deleted if the member stops boosting, loses the allowed role or leaves. "
         "Names must be unique, can't contain @ and follow the word filter. "
         "The bot needs Manage Roles and its role must be above where custom roles go."),

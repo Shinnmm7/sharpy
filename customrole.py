@@ -706,6 +706,39 @@ class CustomRoles(commands.GroupCog, group_name="role", group_description="Custo
             f"{role.mention} can no longer be used for custom roles. Existing custom roles are removed the next "
             "time that member's roles change.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
+    @app_commands.command(name="give", description="Give any role to a member (staff)")
+    @app_commands.describe(role="The role to give", member="Who to give it to")
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_roles=True)
+    @app_commands.checks.bot_has_permissions(manage_roles=True)
+    async def give(self, interaction: discord.Interaction, role: discord.Role, member: discord.Member):
+        guild = interaction.guild
+        if role.is_default():
+            return await interaction.response.send_message("You can't give someone @everyone, they already have it.",
+                                                           ephemeral=True)
+        if role.managed:
+            return await interaction.response.send_message(
+                "That role belongs to a bot or integration, so it can't be given out by hand.", ephemeral=True)
+        if role >= guild.me.top_role:
+            return await interaction.response.send_message(
+                "That role is at or above my top role, so I can't give it out. Move my role higher.", ephemeral=True)
+        if role >= interaction.user.top_role and interaction.user.id != guild.owner_id:
+            return await interaction.response.send_message(
+                "That role is at or above your own top role, so you can't give it out.", ephemeral=True)
+        if role in member.roles:
+            return await interaction.response.send_message(
+                f"{member.mention} already has {role.mention}.", ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
+        try:
+            await member.add_roles(role, reason=f"/role give by {interaction.user}")
+        except discord.HTTPException as e:
+            return await interaction.response.send_message(f"I couldn't give that role: {e.text if hasattr(e, 'text') else e}",
+                                                           ephemeral=True)
+        await interaction.response.send_message(f"Gave {role.mention} to {member.mention}.", ephemeral=True,
+                                                allowed_mentions=discord.AllowedMentions.none())
+        await self.bot.log(guild, "Role given", f"{interaction.user.mention} gave {role.mention} to {member.mention}.",
+                           discord.Color.blurple())
+
     @app_commands.command(name="boosters", description="Choose whether server boosters can make a custom role")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
