@@ -8,12 +8,12 @@ from discord import app_commands
 from discord.ext import commands
 
 SUGGESTION_TYPES = {
-    "game": ("Roblox game suggestion", "🎮", "Tell us your suggestion for the Roblox game: what should change, "
-                                            "and why."),
-    "server": ("Discord server suggestion", "💬", "Tell us your suggestion for the Discord server: what should "
-                                                 "change, and why."),
+    "game": ("Roblox game suggestion", "Tell us your suggestion for the Roblox game: what should change, "
+                                       "and why."),
+    "server": ("Discord server suggestion", "Tell us your suggestion for the Discord server: what should "
+                                            "change, and why."),
 }
-CATEGORY_LABEL = {kind: label for kind, (label, _, _) in SUGGESTION_TYPES.items()}
+CATEGORY_LABEL = {kind: label for kind, (label, _) in SUGGESTION_TYPES.items()}
 STATUS_COLOR = {"pending": discord.Color.blurple(), "approved": discord.Color.green(), "denied": discord.Color.red()}
 
 
@@ -57,8 +57,8 @@ class SuggestionPanel(discord.ui.View):
     def __init__(self, cog: "Suggestions"):
         super().__init__(timeout=None)
         self.cog = cog
-        for kind, (label, emoji, _) in SUGGESTION_TYPES.items():
-            button = discord.ui.Button(label=label, emoji=emoji, style=discord.ButtonStyle.primary,
+        for kind, (label, _) in SUGGESTION_TYPES.items():
+            button = discord.ui.Button(label=label, style=discord.ButtonStyle.primary,
                                        custom_id=f"suggestion:open:{kind}")
             button.callback = self.make_callback(kind)
             self.add_item(button)
@@ -80,7 +80,7 @@ class SuggestionControls(discord.ui.View):
                                     custom_id="suggestion:approve", disabled=decided)
         deny = discord.ui.Button(label="Deny", style=discord.ButtonStyle.danger,
                                  custom_id="suggestion:deny", disabled=decided)
-        close = discord.ui.Button(label="Close", emoji="🔒", style=discord.ButtonStyle.secondary,
+        close = discord.ui.Button(label="Close", style=discord.ButtonStyle.secondary,
                                   custom_id="suggestion:close")
         approve.callback, deny.callback = self.decide("approved"), self.decide("denied")
         close.callback = self.close
@@ -155,9 +155,9 @@ class Suggestions(commands.Cog):
             return await interaction.response.send_message(
                 f"I need Manage Channels in the **{category.name}** category.", ephemeral=True)
         embed = discord.Embed(
-            title="💡 Suggestions",
+            title="Suggestions",
             description="Got an idea? Press a button below and a private channel will be created for you and "
-                        "our staff.\n\n" + "\n".join(f"{e} **{label}**" for label, e, _ in SUGGESTION_TYPES.values()),
+                        "our staff.\n\n" + "\n".join(f"**{label}**" for label, _ in SUGGESTION_TYPES.values()),
             color=discord.Color.blurple())
         try:
             await channel.send(embed=embed, view=SuggestionPanel(self))
@@ -196,7 +196,7 @@ class Suggestions(commands.Cog):
             await self.bot.db.execute("DELETE FROM suggestions WHERE channel_id=?", (channel_id,))  # deleted by hand
         await self.bot.db.commit()
 
-        label, emoji, hint = SUGGESTION_TYPES[kind]
+        label, hint = SUGGESTION_TYPES[kind]
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True,
@@ -217,7 +217,7 @@ class Suggestions(commands.Cog):
                 "I couldn't create the suggestion channel (the category may be full, or I'm missing permissions).",
                 ephemeral=True)
 
-        embed = discord.Embed(title=f"{emoji} {label}", description=f"{user.mention}, {hint}\n\n"
+        embed = discord.Embed(title=label, description=f"{user.mention}, {hint}\n\n"
                               f"A member of {staff_role.mention} will take a look shortly.",
                               color=STATUS_COLOR["pending"], timestamp=datetime.now(timezone.utc))
         message_id = None
@@ -306,7 +306,7 @@ class BugExploitPanel(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
-    @discord.ui.button(label="Report a bug or exploit", emoji="🐞", style=discord.ButtonStyle.primary,
+    @discord.ui.button(label="Report a bug or exploit", style=discord.ButtonStyle.primary,
                        custom_id="bugreport:open")
     async def open(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.open_report(interaction)
@@ -321,7 +321,7 @@ class BugReportControls(discord.ui.View):
         resolve = discord.ui.Button(label="Resolved" if decided else "Resolve",
                                     style=discord.ButtonStyle.secondary if decided else discord.ButtonStyle.success,
                                     custom_id="bugreport:resolve", disabled=decided)
-        close = discord.ui.Button(label="Close", emoji="🔒", style=discord.ButtonStyle.danger,
+        close = discord.ui.Button(label="Close", style=discord.ButtonStyle.danger,
                                   custom_id="bugreport:close")
         resolve.callback = self.resolve
         close.callback = self.close
@@ -400,7 +400,7 @@ class BugExploit(commands.Cog):
                 f"Heads up: {channel.mention} looks visible to everyone. Exploit reports are easiest to abuse "
                 "before they're fixed, so a staff-only channel for the panel is safer.", ephemeral=True)
         embed = discord.Embed(
-            title="🐞 Bug & exploit reports",
+            title="Bug & exploit reports",
             description="Found a bug or exploit in the Roblox game? Press the button below and a private channel "
                         "will be created for you and our staff.", color=discord.Color.gold())
         try:
@@ -468,7 +468,7 @@ class BugExploit(commands.Cog):
                 ephemeral=True)
 
         embed = discord.Embed(
-            title="🐞 Bug / exploit report",
+            title="Bug / exploit report",
             description=f"{user.mention}, tell us:\n"
                         "- What's wrong, and how to reproduce it\n"
                         "- How severe it is (Low / Medium / High / Critical -- pick Critical if it's being "
