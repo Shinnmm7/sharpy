@@ -7,16 +7,14 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-CATEGORY_CHOICES = [app_commands.Choice(name="Roblox game", value="game"),
-                    app_commands.Choice(name="Discord server", value="server")]
-CATEGORY_LABEL = {"game": "Roblox game", "server": "Discord server"}
+SUGGESTION_TYPES = {
+    "game": ("Roblox game suggestion", "🎮", "Tell us your suggestion for the Roblox game: what should change, "
+                                            "and why."),
+    "server": ("Discord server suggestion", "💬", "Tell us your suggestion for the Discord server: what should "
+                                                 "change, and why."),
+}
+CATEGORY_LABEL = {kind: label for kind, (label, _, _) in SUGGESTION_TYPES.items()}
 STATUS_COLOR = {"pending": discord.Color.blurple(), "approved": discord.Color.green(), "denied": discord.Color.red()}
-
-SEVERITY_CHOICES = [app_commands.Choice(name="Low", value="Low"), app_commands.Choice(name="Medium", value="Medium"),
-                    app_commands.Choice(name="High", value="High"),
-                    app_commands.Choice(name="Critical (actively being abused)", value="Critical")]
-SEVERITY_COLOR = {"Low": discord.Color.light_grey(), "Medium": discord.Color.gold(), "High": discord.Color.orange(),
-                  "Critical": discord.Color.red()}
 
 
 def channel_name(prefix: str, user: discord.abc.User) -> str:
@@ -25,9 +23,9 @@ def channel_name(prefix: str, user: discord.abc.User) -> str:
 
 
 async def migrate_config_table(db, table: str, probe_col: str):
-    """The config tables used to be keyed differently (shared-channel design). If a table with this name already
-    exists from that old schema (missing probe_col, e.g. category_id), rename it out of the way so the fresh
-    CREATE TABLE IF NOT EXISTS below can make the current schema. Old rows aren't lost, just parked in *_legacy."""
+    """The config tables used to be keyed differently (older shared-channel designs). If a table with this name
+    already exists but is missing probe_col, rename it out of the way so the fresh CREATE TABLE IF NOT EXISTS
+    below can make the current schema. Old rows aren't lost, just parked in *_legacy."""
     async with db.execute(f"PRAGMA table_info({table})") as cur:
         cols = {row[1] for row in await cur.fetchall()}
     if cols and probe_col not in cols:
@@ -47,6 +45,28 @@ async def save_transcript(channel: discord.TextChannel) -> discord.File:
     except discord.HTTPException:
         lines.append("(transcript incomplete: I couldn't read the full history)")
     return discord.File(io.BytesIO("\n".join(lines).encode("utf-8")), filename=f"{channel.name}.txt")
+
+
+# =====================================================================================================
+# /suggestion -- works like /ticket: press a button on the panel, get a private channel
+# =====================================================================================================
+
+class SuggestionPanel(discord.ui.View):
+    """The buttons under the suggestion panel message. Persistent: works again after the bot restarts."""
+
+    def __init__(self, cog: "Suggestions"):
+        super().__init__(timeout=None)
+        self.cog = cog
+        for kind, (label, emoji, _) in SUGGESTION_TYPES.items():
+            button = discord.ui.Button(label=label, emoji=emoji, style=discord.ButtonStyle.primary,
+                                       custom_id=f"suggestion:open:{kind}")
+            button.callback = self.make_callback(kind)
+            self.add_item(button)
+
+    def make_callback(self, kind: str):
+        async def callback(interaction: discord.Interaction):
+            await self.cog.open_suggestion(interaction, kind)
+        return callback
 
 
 class SuggestionControls(discord.ui.View):
@@ -77,8 +97,8 @@ class SuggestionControls(discord.ui.View):
 
 
 class Suggestions(commands.Cog):
-    """/suggestion: members suggest things for the Roblox game or the Discord server. Submitting opens a private
-    channel for that one suggestion, like a support ticket, where staff discuss and decide it."""
+    """/suggestion setup posts a panel like /ticket's: press Roblox game or Discord server and a private channel
+    opens just for that suggestion, where staff discuss it and Approve/Deny/Close it."""
 
     suggestion = app_commands.Group(name="suggestion", description="Suggest something for the game or the server",
                                     guild_only=True)
@@ -97,6 +117,7 @@ class Suggestions(commands.Cog):
                 channel_id INTEGER PRIMARY KEY, guild_id INTEGER, user_id INTEGER, category TEXT, text TEXT,
                 message_id INTEGER, status TEXT DEFAULT 'pending', created_at INTEGER)""")
         await db.commit()
+        self.bot.add_view(SuggestionPanel(self))
         self.bot.add_view(SuggestionControls(self))
 
     async def config(self, guild_id: int):
@@ -116,42 +137,52 @@ class Suggestions(commands.Cog):
 
     # ---------- /suggestion setup ----------
 
-    @suggestion.command(name="setup", description="Set up where new suggestion channels are created")
-    @app_commands.describe(category="Category that new suggestion channels are created in",
+    @suggestion.command(name="setup", description="Post the suggestion panel (Roblox game / Discord server buttons)")
+    @app_commands.describe(channel="Where to post the panel", category="Category new suggestion channels are created in",
                            staff_role="Role that can see and decide every suggestion",
                            log_channel="Where transcripts are sent when a suggestion channel closes (optional)")
+    @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.bot_has_permissions(manage_channels=True, manage_roles=True)
-    async def setup_cmd(self, interaction: discord.Interaction, category: discord.CategoryChannel,
-                        staff_role: discord.Role, log_channel: discord.TextChannel | None = None):
-        if not category.permissions_for(interaction.guild.me).manage_channels:
+    async def setup_cmd(self, interaction: discord.Interaction, channel: discord.TextChannel,
+                        category: discord.CategoryChannel, staff_role: discord.Role,
+                        log_channel: discord.TextChannel | None = None):
+        me = interaction.guild.me
+        if not channel.permissions_for(me).send_messages or not channel.permissions_for(me).embed_links:
+            return await interaction.response.send_message(
+                f"I need Send Messages and Embed Links in {channel.mention}.", ephemeral=True)
+        if not category.permissions_for(me).manage_channels:
             return await interaction.response.send_message(
                 f"I need Manage Channels in the **{category.name}** category.", ephemeral=True)
+        embed = discord.Embed(
+            title="💡 Suggestions",
+            description="Got an idea? Press a button below and a private channel will be created for you and "
+                        "our staff.\n\n" + "\n".join(f"{e} **{label}**" for label, e, _ in SUGGESTION_TYPES.values()),
+            color=discord.Color.blurple())
+        try:
+            await channel.send(embed=embed, view=SuggestionPanel(self))
+        except discord.HTTPException:
+            return await interaction.response.send_message("I couldn't post in that channel.", ephemeral=True)
         await self.bot.db.execute(
             "INSERT INTO suggestion_config (guild_id, category_id, staff_role_id, log_channel_id) VALUES (?,?,?,?) "
             "ON CONFLICT(guild_id) DO UPDATE SET category_id=excluded.category_id, "
             "staff_role_id=excluded.staff_role_id, log_channel_id=excluded.log_channel_id",
             (interaction.guild_id, category.id, staff_role.id, log_channel.id if log_channel else None))
         await self.bot.db.commit()
-        await interaction.response.send_message(
-            f"Got it. New suggestions will open a private channel in **{category.name}**, visible to "
-            f"{staff_role.mention}.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+        await interaction.response.send_message(f"Suggestion panel posted in {channel.mention}.", ephemeral=True)
+        await self.bot.log(interaction.guild, "Suggestion panel set up",
+                           f"Panel in {channel.mention} by {interaction.user}", discord.Color.green())
 
-    # ---------- /suggestion submit (opens the channel) ----------
+    # ---------- opening (button on the panel) ----------
 
-    @suggestion.command(name="submit", description="Suggest something for the Roblox game or the Discord server")
-    @app_commands.describe(category="What the suggestion is for",
-                           suggestion="Your suggestion (type \\n for a new line)")
-    @app_commands.choices(category=CATEGORY_CHOICES)
-    async def submit(self, interaction: discord.Interaction, category: app_commands.Choice[str],
-                     suggestion: app_commands.Range[str, 5, 1500]):
+    async def open_suggestion(self, interaction: discord.Interaction, kind: str):
         guild, user = interaction.guild, interaction.user
         cfg = await self.config(guild.id)
-        cat_channel = guild.get_channel(cfg["category_id"]) if cfg else None
+        category = guild.get_channel(cfg["category_id"]) if cfg else None
         staff_role = guild.get_role(cfg["staff_role_id"]) if cfg else None
-        if not cfg or cat_channel is None or staff_role is None:
+        if not cfg or category is None or staff_role is None:
             return await interaction.response.send_message(
-                "Suggestions aren't set up yet. Ask staff to run `/suggestion setup` first.", ephemeral=True)
+                "Suggestions aren't set up properly. Ask an admin to run `/suggestion setup` again.", ephemeral=True)
 
         async with self.bot.db.execute(
                 "SELECT channel_id FROM suggestions WHERE guild_id=? AND user_id=? AND status='pending'",
@@ -165,7 +196,7 @@ class Suggestions(commands.Cog):
             await self.bot.db.execute("DELETE FROM suggestions WHERE channel_id=?", (channel_id,))  # deleted by hand
         await self.bot.db.commit()
 
-        text = suggestion.replace("\\n", "\n")
+        label, emoji, hint = SUGGESTION_TYPES[kind]
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True,
@@ -178,19 +209,17 @@ class Suggestions(commands.Cog):
         }
         await interaction.response.defer(ephemeral=True)
         try:
-            channel = await guild.create_text_channel(
-                channel_name(f"suggest-{category.value}", user), category=cat_channel, overwrites=overwrites,
-                topic=f"{category.name} suggestion from {user} ({user.id})",
-                reason=f"Suggestion opened by {user}")
+            channel = await guild.create_text_channel(channel_name(f"suggest-{kind}", user), category=category,
+                                                      overwrites=overwrites, topic=f"{label} from {user} ({user.id})",
+                                                      reason=f"Suggestion opened by {user}")
         except discord.HTTPException:
             return await interaction.followup.send(
                 "I couldn't create the suggestion channel (the category may be full, or I'm missing permissions).",
                 ephemeral=True)
 
-        embed = discord.Embed(title=f"💡 {category.name} suggestion", description=text,
+        embed = discord.Embed(title=f"{emoji} {label}", description=f"{user.mention}, {hint}\n\n"
+                              f"A member of {staff_role.mention} will take a look shortly.",
                               color=STATUS_COLOR["pending"], timestamp=datetime.now(timezone.utc))
-        embed.set_author(name=str(user), icon_url=user.display_avatar.url)
-        embed.set_footer(text="Pending")
         message_id = None
         try:
             message = await channel.send(content=f"{user.mention} {staff_role.mention}", embed=embed,
@@ -202,10 +231,10 @@ class Suggestions(commands.Cog):
         await self.bot.db.execute(
             "INSERT INTO suggestions (channel_id, guild_id, user_id, category, text, message_id, created_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (channel.id, guild.id, user.id, category.value, text, message_id, int(time.time())))
+            (channel.id, guild.id, user.id, kind, "", message_id, int(time.time())))
         await self.bot.db.commit()
-        await interaction.followup.send(f"Your suggestion is in: {channel.mention}", ephemeral=True)
-        await self.bot.log(guild, "Suggestion opened", f"{category.name} suggestion {channel.mention} by {user}")
+        await interaction.followup.send(f"Your suggestion channel is ready: {channel.mention}", ephemeral=True)
+        await self.bot.log(guild, "Suggestion opened", f"{label} {channel.mention} by {user}")
 
     # ---------- deciding and closing (buttons inside the channel) ----------
 
@@ -266,6 +295,23 @@ class Suggestions(commands.Cog):
         await self.bot.db.commit()
 
 
+# =====================================================================================================
+# /bug-exploit -- same panel-button pattern, for reporting bugs/exploits in the Roblox game
+# =====================================================================================================
+
+class BugExploitPanel(discord.ui.View):
+    """The single button under the bug/exploit panel message. Persistent: works again after the bot restarts."""
+
+    def __init__(self, cog: "BugExploit"):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="Report a bug or exploit", emoji="🐞", style=discord.ButtonStyle.primary,
+                       custom_id="bugreport:open")
+    async def open(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.open_report(interaction)
+
+
 class BugReportControls(discord.ui.View):
     """Resolve/Close buttons inside a bug/exploit report channel. Persistent: still work after the bot restarts."""
 
@@ -290,9 +336,9 @@ class BugReportControls(discord.ui.View):
 
 
 class BugExploit(commands.Cog):
-    """/bug-exploit report: players report bugs/exploits in the Roblox game. Reporting opens a private staff
-    channel for that one report, like a support ticket -- exploit reports are easiest to abuse before they're
-    patched, so each one stays visible only to the reporter, staff, and the bot."""
+    """/bug-exploit setup posts a panel like /ticket's: press Report a bug or exploit and a private staff channel
+    opens just for that report -- exploit reports are easiest to abuse before they're patched, so each one stays
+    visible only to the reporter, staff, and the bot."""
 
     group = app_commands.Group(name="bug-exploit", description="Report a bug or exploit in the Roblox game",
                                guild_only=True)
@@ -311,6 +357,7 @@ class BugExploit(commands.Cog):
                 channel_id INTEGER PRIMARY KEY, guild_id INTEGER, user_id INTEGER, title TEXT, description TEXT,
                 severity TEXT, proof_url TEXT, message_id INTEGER, status TEXT DEFAULT 'open', created_at INTEGER)""")
         await db.commit()
+        self.bot.add_view(BugExploitPanel(self))
         self.bot.add_view(BugReportControls(self))
 
     async def config(self, guild_id: int):
@@ -330,47 +377,62 @@ class BugExploit(commands.Cog):
 
     # ---------- /bug-exploit setup ----------
 
-    @group.command(name="setup", description="Set up where new bug/exploit report channels are created")
-    @app_commands.describe(category="A staff-only category -- exploit reports can be sensitive",
+    @group.command(name="setup", description="Post the bug/exploit report panel")
+    @app_commands.describe(channel="Where to post the panel (a staff-only channel is safest)",
+                           category="A staff-only category new report channels are created in",
                            staff_role="Role that can see and resolve every report",
                            log_channel="Where transcripts are sent when a report channel closes (optional)")
+    @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.bot_has_permissions(manage_channels=True, manage_roles=True)
-    async def setup_cmd(self, interaction: discord.Interaction, category: discord.CategoryChannel,
-                        staff_role: discord.Role, log_channel: discord.TextChannel | None = None):
-        if not category.permissions_for(interaction.guild.me).manage_channels:
+    async def setup_cmd(self, interaction: discord.Interaction, channel: discord.TextChannel,
+                        category: discord.CategoryChannel, staff_role: discord.Role,
+                        log_channel: discord.TextChannel | None = None):
+        me = interaction.guild.me
+        if not channel.permissions_for(me).send_messages or not channel.permissions_for(me).embed_links:
+            return await interaction.response.send_message(
+                f"I need Send Messages and Embed Links in {channel.mention}.", ephemeral=True)
+        if not category.permissions_for(me).manage_channels:
             return await interaction.response.send_message(
                 f"I need Manage Channels in the **{category.name}** category.", ephemeral=True)
+        if channel.permissions_for(interaction.guild.default_role).view_channel:
+            await interaction.response.send_message(
+                f"Heads up: {channel.mention} looks visible to everyone. Exploit reports are easiest to abuse "
+                "before they're fixed, so a staff-only channel for the panel is safer.", ephemeral=True)
+        embed = discord.Embed(
+            title="🐞 Bug & exploit reports",
+            description="Found a bug or exploit in the Roblox game? Press the button below and a private channel "
+                        "will be created for you and our staff.", color=discord.Color.gold())
+        try:
+            await channel.send(embed=embed, view=BugExploitPanel(self))
+        except discord.HTTPException:
+            if interaction.response.is_done():
+                return await interaction.followup.send("I couldn't post in that channel.", ephemeral=True)
+            return await interaction.response.send_message("I couldn't post in that channel.", ephemeral=True)
         await self.bot.db.execute(
             "INSERT INTO bugreport_config (guild_id, category_id, staff_role_id, log_channel_id) VALUES (?,?,?,?) "
             "ON CONFLICT(guild_id) DO UPDATE SET category_id=excluded.category_id, "
             "staff_role_id=excluded.staff_role_id, log_channel_id=excluded.log_channel_id",
             (interaction.guild_id, category.id, staff_role.id, log_channel.id if log_channel else None))
         await self.bot.db.commit()
-        await interaction.response.send_message(
-            f"Got it. New bug/exploit reports will open a private channel in **{category.name}**, visible to "
-            f"{staff_role.mention}.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+        if interaction.response.is_done():
+            await interaction.followup.send(f"Bug/exploit panel posted in {channel.mention}.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"Bug/exploit panel posted in {channel.mention}.", ephemeral=True)
+        await self.bot.log(interaction.guild, "Bug/exploit panel set up",
+                           f"Panel in {channel.mention} by {interaction.user}", discord.Color.green())
 
-    # ---------- /bug-exploit report (opens the channel) ----------
+    # ---------- opening (button on the panel) ----------
 
-    @group.command(name="report", description="Report a bug or exploit in the Roblox game (opens a private staff channel)")
-    @app_commands.describe(title="Short summary of the bug or exploit",
-                           description="What happens and how to reproduce it (type \\n for a new line)",
-                           severity="How bad is it? Pick Critical if it's being actively abused right now",
-                           proof="Optional screenshot or video showing it")
-    @app_commands.choices(severity=SEVERITY_CHOICES)
-    async def report(self, interaction: discord.Interaction, title: app_commands.Range[str, 3, 150],
-                     description: app_commands.Range[str, 5, 1500], severity: app_commands.Choice[str],
-                     proof: discord.Attachment | None = None):
+    async def open_report(self, interaction: discord.Interaction):
         guild, user = interaction.guild, interaction.user
         cfg = await self.config(guild.id)
-        cat_channel = guild.get_channel(cfg["category_id"]) if cfg else None
+        category = guild.get_channel(cfg["category_id"]) if cfg else None
         staff_role = guild.get_role(cfg["staff_role_id"]) if cfg else None
-        if not cfg or cat_channel is None or staff_role is None:
+        if not cfg or category is None or staff_role is None:
             return await interaction.response.send_message(
-                "Bug/exploit reporting isn't set up yet. Ask staff to run `/bug-exploit setup` first.", ephemeral=True)
-        if proof and proof.size > 25 * 1024 * 1024:
-            return await interaction.response.send_message("That file is too large to attach.", ephemeral=True)
+                "Bug/exploit reporting isn't set up properly. Ask an admin to run `/bug-exploit setup` again.",
+                ephemeral=True)
 
         async with self.bot.db.execute(
                 "SELECT channel_id FROM bug_reports WHERE guild_id=? AND user_id=? AND status='open'",
@@ -396,32 +458,28 @@ class BugExploit(commands.Cog):
         }
         await interaction.response.defer(ephemeral=True)
         try:
-            channel = await guild.create_text_channel(
-                channel_name("bugreport", user), category=cat_channel, overwrites=overwrites,
-                topic=f"[{severity.value}] {title} -- reported by {user} ({user.id})",
-                reason=f"Bug/exploit report opened by {user}")
+            channel = await guild.create_text_channel(channel_name("bugreport", user), category=category,
+                                                      overwrites=overwrites,
+                                                      topic=f"Bug/exploit report from {user} ({user.id})",
+                                                      reason=f"Report opened by {user}")
         except discord.HTTPException:
             return await interaction.followup.send(
                 "I couldn't create the report channel (the category may be full, or I'm missing permissions).",
                 ephemeral=True)
 
-        desc = description.replace("\\n", "\n")
-        embed = discord.Embed(title=f"[{severity.value}] {title}", description=desc,
-                              color=SEVERITY_COLOR[severity.value], timestamp=datetime.now(timezone.utc))
-        embed.set_author(name=str(user), icon_url=user.display_avatar.url)
-        embed.set_footer(text="Open")
-        file = None
-        if proof:
-            try:
-                file = await proof.to_file()
-                if (proof.content_type or "").startswith("image/"):
-                    embed.set_image(url=f"attachment://{file.filename}")
-            except discord.HTTPException:
-                file = None
+        embed = discord.Embed(
+            title="🐞 Bug / exploit report",
+            description=f"{user.mention}, tell us:\n"
+                        "- What's wrong, and how to reproduce it\n"
+                        "- How severe it is (Low / Medium / High / Critical -- pick Critical if it's being "
+                        "actively abused right now)\n"
+                        "- Attach a screenshot or video if you can\n\n"
+                        f"A member of {staff_role.mention} will take a look shortly.",
+            color=discord.Color.gold(), timestamp=datetime.now(timezone.utc))
         message_id = None
         try:
             message = await channel.send(content=f"{user.mention} {staff_role.mention}", embed=embed,
-                                         view=BugReportControls(self), **({"file": file} if file else {}),
+                                         view=BugReportControls(self),
                                          allowed_mentions=discord.AllowedMentions(users=[user], roles=[staff_role]))
             message_id = message.id
         except discord.HTTPException:
@@ -429,10 +487,9 @@ class BugExploit(commands.Cog):
         await self.bot.db.execute(
             "INSERT INTO bug_reports (channel_id, guild_id, user_id, title, description, severity, proof_url, "
             "message_id, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (channel.id, guild.id, user.id, title, desc, severity.value, proof.url if proof else None, message_id,
-             int(time.time())))
+            (channel.id, guild.id, user.id, "", "", None, None, message_id, int(time.time())))
         await self.bot.db.commit()
-        await interaction.followup.send(f"Your report is in: {channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"Your report channel is ready: {channel.mention}", ephemeral=True)
         await self.bot.log(guild, "Bug/exploit report opened", f"{channel.mention} by {user}")
 
     # ---------- resolving and closing (buttons inside the channel) ----------

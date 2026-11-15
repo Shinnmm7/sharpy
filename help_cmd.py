@@ -126,19 +126,18 @@ PAGES: dict[str, str] = {
         "and sends confessions to the other. `/confess off`, `/confess reveal number` (logged), "
         "`/confess delete number`."),
     "Suggestions & bug reports": (
-        "**/suggestion submit category suggestion**: suggest something for the **Roblox game** or the **Discord "
-        "server** (pick one). Works like a support ticket -- it opens a brand-new private channel just for that "
-        "suggestion, visible only to you, the bot, and staff. **Approve**/**Deny** buttons inside decide it, and "
-        "a **Close** button wraps it up (saves a transcript if staff set a log channel, then deletes the channel).\n"
-        "Staff (Manage Server): `/suggestion setup category staff_role [log_channel]` picks the category new "
-        "suggestion channels are created in and who can see/decide them.\n\n"
-        "**/bug-exploit report title description severity [proof]**: report a bug or exploit in the Roblox game. "
-        "Also opens a private channel just for that report (you + staff + bot only), since exploit reports can be "
-        "abused before they're fixed. Pick **Critical** if it's being actively abused right now. `proof` takes a "
-        "screenshot or video. A **Resolve** button marks it fixed; **Close** saves a transcript and deletes the "
-        "channel.\n"
-        "Staff (Manage Server): `/bug-exploit setup category staff_role [log_channel]` picks the category new "
-        "report channels are created in and who can see/resolve them."),
+        "Work just like **/ticket**: press a button on a panel, get a private channel for just that submission.\n\n"
+        "**Suggestions**: press **Roblox game suggestion** or **Discord server suggestion** on the panel and a "
+        "private channel opens for you, staff, and the bot. Type your suggestion in there. **Approve**/**Deny** "
+        "buttons inside let staff decide it, and **Close** wraps it up (saves a transcript if staff set a log "
+        "channel, then deletes the channel).\n"
+        "Staff (Manage Server): `/suggestion setup channel category staff_role [log_channel]` posts the panel.\n\n"
+        "**Bug/exploit reports**: press **Report a bug or exploit** on the panel to open a private channel "
+        "(you + staff + bot only) -- exploit reports can be abused before they're fixed, so nobody else sees it. "
+        "Describe the bug, how to reproduce it, and how severe it is, and attach a screenshot or video if you "
+        "can. **Resolve** marks it fixed; **Close** saves a transcript and deletes the channel.\n"
+        "Staff (Manage Server): `/bug-exploit setup channel category staff_role [log_channel]` posts the panel "
+        "(the bot warns if the panel channel looks public)."),
     "Mrbeastpot": (
         "A trap channel that catches spam bots (like the fake giveaway and casino scams). Spam bots post in "
         "every channel they can see, real members never need this one.\n\n"
