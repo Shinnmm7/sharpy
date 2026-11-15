@@ -127,19 +127,18 @@ PAGES: dict[str, str] = {
         "`/confess delete number`."),
     "Suggestions & bug reports": (
         "**/suggestion submit category suggestion**: suggest something for the **Roblox game** or the **Discord "
-        "server** (pick one). Posted as an embed with \N{THUMBS UP SIGN}/\N{THUMBS DOWN SIGN} vote buttons "
-        "(click again to remove your vote) and **Approve**/**Deny** buttons for staff, right on the message, "
-        "in whichever channel staff set for that category.\n"
-        "Staff (Manage Server): `/suggestion setup [game_channel] [server_channel]` sets one or both channels. "
-        "Decide with the buttons on the message, or remotely with `/suggestion approve id [reason]` / "
-        "`/suggestion deny id [reason]`. Either way the embed recolors and the buttons lock.\n\n"
+        "server** (pick one). Works like a support ticket -- it opens a brand-new private channel just for that "
+        "suggestion, visible only to you, the bot, and staff. **Approve**/**Deny** buttons inside decide it, and "
+        "a **Close** button wraps it up (saves a transcript if staff set a log channel, then deletes the channel).\n"
+        "Staff (Manage Server): `/suggestion setup category staff_role [log_channel]` picks the category new "
+        "suggestion channels are created in and who can see/decide them.\n\n"
         "**/bug-exploit report title description severity [proof]**: report a bug or exploit in the Roblox game. "
-        "Sent **privately** to a staff channel, not posted publicly, since exploit reports can be abused before "
-        "they're fixed. Pick **Critical** if it's being actively abused right now. `proof` takes a screenshot or "
-        "video.\n"
-        "Staff (Manage Server): `/bug-exploit setup channel [ping_role]` sets the private channel (the bot warns "
-        "if that channel looks public). Close one with the **Resolve** button on the report, or remotely "
-        "with `/bug-exploit resolve report_id [note]`."),
+        "Also opens a private channel just for that report (you + staff + bot only), since exploit reports can be "
+        "abused before they're fixed. Pick **Critical** if it's being actively abused right now. `proof` takes a "
+        "screenshot or video. A **Resolve** button marks it fixed; **Close** saves a transcript and deletes the "
+        "channel.\n"
+        "Staff (Manage Server): `/bug-exploit setup category staff_role [log_channel]` picks the category new "
+        "report channels are created in and who can see/resolve them."),
     "Mrbeastpot": (
         "A trap channel that catches spam bots (like the fake giveaway and casino scams). Spam bots post in "
         "every channel they can see, real members never need this one.\n\n"
