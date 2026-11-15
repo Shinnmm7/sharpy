@@ -24,6 +24,17 @@ def channel_name(prefix: str, user: discord.abc.User) -> str:
     return f"{prefix}-{slug}"[:90]
 
 
+async def migrate_config_table(db, table: str, probe_col: str):
+    """The config tables used to be keyed differently (shared-channel design). If a table with this name already
+    exists from that old schema (missing probe_col, e.g. category_id), rename it out of the way so the fresh
+    CREATE TABLE IF NOT EXISTS below can make the current schema. Old rows aren't lost, just parked in *_legacy."""
+    async with db.execute(f"PRAGMA table_info({table})") as cur:
+        cols = {row[1] for row in await cur.fetchall()}
+    if cols and probe_col not in cols:
+        await db.execute(f"DROP TABLE IF EXISTS {table}_legacy")
+        await db.execute(f"ALTER TABLE {table} RENAME TO {table}_legacy")
+
+
 async def save_transcript(channel: discord.TextChannel) -> discord.File:
     lines = []
     try:
@@ -77,6 +88,7 @@ class Suggestions(commands.Cog):
 
     async def cog_load(self):
         db = self.bot.db
+        await migrate_config_table(db, "suggestion_config", "category_id")
         await db.execute(
             """CREATE TABLE IF NOT EXISTS suggestion_config (
                 guild_id INTEGER PRIMARY KEY, category_id INTEGER, staff_role_id INTEGER, log_channel_id INTEGER)""")
@@ -290,6 +302,7 @@ class BugExploit(commands.Cog):
 
     async def cog_load(self):
         db = self.bot.db
+        await migrate_config_table(db, "bugreport_config", "category_id")
         await db.execute(
             """CREATE TABLE IF NOT EXISTS bugreport_config (
                 guild_id INTEGER PRIMARY KEY, category_id INTEGER, staff_role_id INTEGER, log_channel_id INTEGER)""")
