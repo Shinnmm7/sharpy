@@ -209,6 +209,30 @@ class AntiNuke(commands.GroupCog, group_name="antinuke"):
                 f"<@{user_id}> did `{entry.action.name}` {len(dq)}/{max_hits} times in {seconds}s.",
                 discord.Color.orange())
 
+    # ---------- scheduled events (only trusted staff may create them) ----------
+
+    @commands.Cog.listener()
+    async def on_scheduled_event_create(self, event: discord.ScheduledEvent):
+        guild = event.guild
+        if guild is None:
+            return
+        creator_id = event.creator_id
+        if creator_id is None or self.is_trusted(guild, creator_id):
+            return
+        deleted = False
+        try:
+            await event.delete(reason="Anti-nuke: scheduled events can only be created by trusted staff")
+            deleted = True
+        except discord.HTTPException:
+            pass
+        result = await self.punish(guild, creator_id, "Anti-nuke: created a scheduled event without permission")
+        await self.bot.log(
+            guild, "Unauthorized event blocked",
+            f"<@{creator_id}> created the scheduled event **{event.name}**.\n"
+            f"**Deleted:** {deleted}\n**Action:** {result}",
+            discord.Color.red(),
+        )
+
     async def handle_bot_add(self, entry: discord.AuditLogEntry):
         guild = entry.guild
         bot_member = guild.get_member(entry.target.id) if entry.target else None
@@ -287,7 +311,9 @@ class AntiNuke(commands.GroupCog, group_name="antinuke"):
         limits = "\n".join(f"`{a.name}`: {n} per {s}s" for a, (n, s) in LIMITS.items())
         trusted = ", ".join(f"<@{u}>" for u in self.trusted[interaction.guild_id]) or "none (owner is always trusted)"
         await interaction.response.send_message(
-            f"**Punishment:** {PUNISHMENT}\n**Limits:**\n{limits}\n**Trusted:** {trusted}", ephemeral=True)
+            f"**Punishment:** {PUNISHMENT}\n**Limits:**\n{limits}\n**Trusted:** {trusted}\n"
+            "**Scheduled events:** only trusted staff may create one; anyone else's gets deleted instantly.",
+            ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
