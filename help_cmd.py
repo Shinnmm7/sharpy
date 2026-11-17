@@ -138,12 +138,12 @@ PAGES: dict[str, str] = {
         "can. **Resolve** marks it fixed; **Close** saves a transcript and deletes the channel.\n"
         "Staff (Manage Server): `/bug-exploit setup channel category staff_role [log_channel]` posts the panel "
         "(the bot warns if the panel channel looks public)."),
-    "Mrbeastpot": (
+    "Spy Honeypot": (
         "A trap channel that catches spam bots (like the fake giveaway and casino scams). Spam bots post in "
         "every channel they can see, real members never need this one.\n\n"
-        "`/mrbeastpot setup channel [action]` (needs Manage Server) posts the warning message. The action is "
+        "`/spyhoneypot setup channel [action]` (needs Manage Server) posts the warning message. The action is "
         "**softban** (default: ban, wipe their last 7 days of messages, then unban), **ban**, or **kick**.\n"
-        "`/mrbeastpot status` shows the channel and how many were caught. `/mrbeastpot off` removes the trap.\n\n"
+        "`/spyhoneypot status` shows the channel and how many were caught. `/spyhoneypot off` removes the trap.\n\n"
         "The message shows a live **Bans** counter. Everything caught is also sent to your log channel with what "
         "they posted. Staff, the owner and anyone above the bot are never touched. The bot needs Ban Members, "
         "Kick Members and Manage Messages, and the channel must be visible to @everyone."),

@@ -6,24 +6,35 @@ from discord.ext import commands
 
 DESCRIPTION = ("# DO NOT SEND MESSAGES IN THIS CHANNEL\n"
                "This channel is used to catch spam bots. Any messages sent here will result in a {action}.")
-LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "mrbeastpot.png")
-LOGO_NAME = "mrbeastpot.png"
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "spyhoneypot.png")
+LOGO_NAME = "spyhoneypot.png"
 ACTION_WORDS = {"softban": "softban", "ban": "ban", "kick": "kick"}
 
 
-class MrBeastPot(commands.GroupCog, group_name="mrbeastpot", group_description="A trap channel that catches spam bots"):
+class SpyHoneypot(commands.GroupCog, group_name="spyhoneypot",
+                  group_description="A trap channel that catches spam bots"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.config: dict[int, dict] = {}  # guild_id -> {channel_id, message_id, action, bans}
 
     async def cog_load(self):
         db = self.bot.db
+        # this cog used to be called mrbeastpot -- carry an existing deployment's settings and ban
+        # counter over to the new table name instead of silently losing them.
+        async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='mrbeastpot_config'") as cur:
+            old_exists = await cur.fetchone()
+        async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='spyhoneypot_config'") as cur:
+            new_exists = await cur.fetchone()
+        if old_exists and not new_exists:
+            await db.execute("ALTER TABLE mrbeastpot_config RENAME TO spyhoneypot_config")
         await db.execute(
-            """CREATE TABLE IF NOT EXISTS mrbeastpot_config (
+            """CREATE TABLE IF NOT EXISTS spyhoneypot_config (
                 guild_id INTEGER PRIMARY KEY, channel_id INTEGER, message_id INTEGER,
                 action TEXT, bans INTEGER DEFAULT 0)""")
         await db.commit()
-        async with db.execute("SELECT guild_id, channel_id, message_id, action, bans FROM mrbeastpot_config") as cur:
+        async with db.execute("SELECT guild_id, channel_id, message_id, action, bans FROM spyhoneypot_config") as cur:
             for gid, ch, msg, action, bans in await cur.fetchall():
                 self.config[gid] = {"channel_id": ch, "message_id": msg, "action": action, "bans": bans}
 
@@ -32,7 +43,7 @@ class MrBeastPot(commands.GroupCog, group_name="mrbeastpot", group_description="
         embed = discord.Embed(description=DESCRIPTION.format(action=ACTION_WORDS[action]),
                               color=discord.Color.from_rgb(37, 37, 43))
         icon = f"attachment://{LOGO_NAME}" if os.path.exists(LOGO_PATH) else None  # attached when the panel is posted
-        embed.set_author(name="MrBeast Pot", icon_url=icon)
+        embed.set_author(name="Spy Honeypot", icon_url=icon)
         embed.set_footer(text=f"Bans: {bans}", icon_url=icon)
         if icon:
             embed.set_thumbnail(url=icon)
@@ -68,21 +79,22 @@ class MrBeastPot(commands.GroupCog, group_name="mrbeastpot", group_description="
             return await interaction.response.send_message("I couldn't post in that channel.", ephemeral=True)
         cfg = {"channel_id": channel.id, "message_id": msg.id, "action": act, "bans": bans}
         await self.bot.db.execute(
-            "INSERT OR REPLACE INTO mrbeastpot_config (guild_id, channel_id, message_id, action, bans) "
+            "INSERT OR REPLACE INTO spyhoneypot_config (guild_id, channel_id, message_id, action, bans) "
             "VALUES (?,?,?,?,?)", (guild.id, channel.id, msg.id, act, bans))
         await self.bot.db.commit()
         self.config[guild.id] = cfg
         await interaction.response.send_message(
-            f"**MrBeast Pot** is set up in {channel.mention}. Anyone without staff permissions who posts there gets a {act}. "
-            "Tip: let @everyone see the channel, and keep real members from needing it.", ephemeral=True)
-        await self.bot.log(guild, "Mrbeastpot set up", f"{channel.mention}, action {act}, by {interaction.user}",
+            f"**Spy Honeypot** is set up in {channel.mention}. Anyone without staff permissions who posts there "
+            f"gets a {act}. Tip: let @everyone see the channel, and keep real members from needing it.",
+            ephemeral=True)
+        await self.bot.log(guild, "Spy Honeypot set up", f"{channel.mention}, action {act}, by {interaction.user}",
                            discord.Color.green())
 
     @app_commands.command(name="off", description="Remove the trap (the old message is left alone)")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
     async def off(self, interaction: discord.Interaction):
-        await self.bot.db.execute("DELETE FROM mrbeastpot_config WHERE guild_id=?", (interaction.guild_id,))
+        await self.bot.db.execute("DELETE FROM spyhoneypot_config WHERE guild_id=?", (interaction.guild_id,))
         await self.bot.db.commit()
         self.config.pop(interaction.guild_id, None)
         await interaction.response.send_message("The trap is off. Posting there is safe again.", ephemeral=True)
@@ -93,7 +105,7 @@ class MrBeastPot(commands.GroupCog, group_name="mrbeastpot", group_description="
     async def status(self, interaction: discord.Interaction):
         cfg = self.config.get(interaction.guild_id)
         if not cfg:
-            return await interaction.response.send_message("No trap set. Use `/mrbeastpot setup`.", ephemeral=True)
+            return await interaction.response.send_message("No trap set. Use `/spyhoneypot setup`.", ephemeral=True)
         await interaction.response.send_message(
             f"Trap channel: <#{cfg['channel_id']}>\nAction: {cfg['action']}\nCaught so far: **{cfg['bans']}**",
             ephemeral=True)
@@ -120,20 +132,20 @@ class MrBeastPot(commands.GroupCog, group_name="mrbeastpot", group_description="
         try:
             if action == "kick":
                 await message.delete()
-                await member.kick(reason="Mrbeastpot: posted in the trap channel")
+                await member.kick(reason="Spy Honeypot: posted in the trap channel")
             else:
                 # banning with message deletion wipes their recent messages everywhere (up to 7 days)
-                await member.ban(reason="Mrbeastpot: posted in the trap channel", delete_message_seconds=604800)
+                await member.ban(reason="Spy Honeypot: posted in the trap channel", delete_message_seconds=604800)
                 if action == "softban":
-                    await guild.unban(member, reason="Mrbeastpot softban")
+                    await guild.unban(member, reason="Spy Honeypot softban")
         except discord.HTTPException:
-            return await self.bot.log(guild, "Mrbeastpot failed",
+            return await self.bot.log(guild, "Spy Honeypot failed",
                                       f"I couldn't {action} {member} ({member.id}). Check my permissions and role order.",
                                       discord.Color.red())
         cfg["bans"] += 1
-        await self.bot.db.execute("UPDATE mrbeastpot_config SET bans=? WHERE guild_id=?", (cfg["bans"], guild.id))
+        await self.bot.db.execute("UPDATE spyhoneypot_config SET bans=? WHERE guild_id=?", (cfg["bans"], guild.id))
         await self.bot.db.commit()
-        await self.bot.log(guild, "Mrbeastpot caught someone",
+        await self.bot.log(guild, "Spy Honeypot caught someone",
                            f"{member} ({member.id}) posted in {message.channel.mention}: {action}\n"
                            f"{message.content[:300] or '(no text)'}", discord.Color.red())
         try:  # keep the counter on the panel up to date
@@ -144,4 +156,4 @@ class MrBeastPot(commands.GroupCog, group_name="mrbeastpot", group_description="
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(MrBeastPot(bot))
+    await bot.add_cog(SpyHoneypot(bot))

@@ -39,7 +39,7 @@ FILE_COMMANDS = {
     "customrole": "/role",
     "community": "/profile /confess /capsule /kudos /daily",
     "surprise": "/surprise",
-    "mrbeastpot": "/mrbeastpot",
+    "spyhoneypot": "/spyhoneypot",
     "fun": "/wyr, /pairup, /vibe, /duel, /birthday",
     "social": "/lfg, /secretsanta, /habit, /wordchain, /remind",
     "security": "/lockdown, /gate, /quarantine, /raid (incl. scan, clean)",
