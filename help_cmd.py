@@ -138,7 +138,7 @@ PAGES: dict[str, str] = {
         "can. **Resolve** marks it fixed; **Close** saves a transcript and deletes the channel.\n"
         "Staff (Manage Server): `/bug-exploit setup channel category staff_role [log_channel]` posts the panel "
         "(the bot warns if the panel channel looks public)."),
-    "Spy Honeypot": (
+    "Nvidia's Spy Honeypot": (
         "A trap channel that catches spam bots (like the fake giveaway and casino scams). Spam bots post in "
         "every channel they can see, real members never need this one.\n\n"
         "`/spyhoneypot setup channel [action]` (needs Manage Server) posts the warning message. The action is "

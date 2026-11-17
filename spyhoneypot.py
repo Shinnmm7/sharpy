@@ -43,7 +43,7 @@ class SpyHoneypot(commands.GroupCog, group_name="spyhoneypot",
         embed = discord.Embed(description=DESCRIPTION.format(action=ACTION_WORDS[action]),
                               color=discord.Color.from_rgb(37, 37, 43))
         icon = f"attachment://{LOGO_NAME}" if os.path.exists(LOGO_PATH) else None  # attached when the panel is posted
-        embed.set_author(name="Spy Honeypot", icon_url=icon)
+        embed.set_author(name="Nvidia's Spy Honeypot", icon_url=icon)
         embed.set_footer(text=f"Bans: {bans}", icon_url=icon)
         if icon:
             embed.set_thumbnail(url=icon)
@@ -84,10 +84,10 @@ class SpyHoneypot(commands.GroupCog, group_name="spyhoneypot",
         await self.bot.db.commit()
         self.config[guild.id] = cfg
         await interaction.response.send_message(
-            f"**Spy Honeypot** is set up in {channel.mention}. Anyone without staff permissions who posts there "
+            f"**Nvidia's Spy Honeypot** is set up in {channel.mention}. Anyone without staff permissions who posts there "
             f"gets a {act}. Tip: let @everyone see the channel, and keep real members from needing it.",
             ephemeral=True)
-        await self.bot.log(guild, "Spy Honeypot set up", f"{channel.mention}, action {act}, by {interaction.user}",
+        await self.bot.log(guild, "Nvidia's Spy Honeypot set up", f"{channel.mention}, action {act}, by {interaction.user}",
                            discord.Color.green())
 
     @app_commands.command(name="off", description="Remove the trap (the old message is left alone)")
@@ -132,20 +132,20 @@ class SpyHoneypot(commands.GroupCog, group_name="spyhoneypot",
         try:
             if action == "kick":
                 await message.delete()
-                await member.kick(reason="Spy Honeypot: posted in the trap channel")
+                await member.kick(reason="Nvidia's Spy Honeypot: posted in the trap channel")
             else:
                 # banning with message deletion wipes their recent messages everywhere (up to 7 days)
-                await member.ban(reason="Spy Honeypot: posted in the trap channel", delete_message_seconds=604800)
+                await member.ban(reason="Nvidia's Spy Honeypot: posted in the trap channel", delete_message_seconds=604800)
                 if action == "softban":
-                    await guild.unban(member, reason="Spy Honeypot softban")
+                    await guild.unban(member, reason="Nvidia's Spy Honeypot softban")
         except discord.HTTPException:
-            return await self.bot.log(guild, "Spy Honeypot failed",
+            return await self.bot.log(guild, "Nvidia's Spy Honeypot failed",
                                       f"I couldn't {action} {member} ({member.id}). Check my permissions and role order.",
                                       discord.Color.red())
         cfg["bans"] += 1
         await self.bot.db.execute("UPDATE spyhoneypot_config SET bans=? WHERE guild_id=?", (cfg["bans"], guild.id))
         await self.bot.db.commit()
-        await self.bot.log(guild, "Spy Honeypot caught someone",
+        await self.bot.log(guild, "Nvidia's Spy Honeypot caught someone",
                            f"{member} ({member.id}) posted in {message.channel.mention}: {action}\n"
                            f"{message.content[:300] or '(no text)'}", discord.Color.red())
         try:  # keep the counter on the panel up to date
